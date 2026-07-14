@@ -161,9 +161,13 @@ exec /bin/bash /srv/run.sh
 #!/bin/bash
 set -e
 
-echo "==================== run.sh 开始 ===================="
+echo "[$(date '+%F %T')] 开始执行脚本"
+
+# ==================== 执行内容 ====================
 rsync -avz --timeout=60 --contimeout=15 --password-file=/etc/rsync.pwd root@${RSYNC_IP}::root/www/wwwroot/ /www/wwwroot/
-echo "==================== run.sh 结束 ===================="
+# ==================== 执行内容结束 ====================
+
+echo "[$(date '+%F %T')] 脚本执行成功"
 ```
 
 ## 测试
