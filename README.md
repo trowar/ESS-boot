@@ -4,6 +4,16 @@
 
 本项目用于制作云主机镜像。它在原主机安装一套开机控制和只读 rsync 环境；使用该镜像创建的新机器开机后，会自动识别自己不是原主机，从原主机取得最新的 `/srv/ess-boot/run.sh`，然后执行其中的业务命令。项目自身生成的文件统一保存在 `/srv/ess-boot/`。
 
+## 一键下载安装
+
+```bash
+if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod +x install.sh && ./install.sh
+```
+
+下载时优先使用 `curl`；系统没有 `curl` 时自动改用 `wget`。如果两者都不存在，命令会停止并提示先安装其中一个，不会执行不完整的安装脚本。
+
+安装脚本会自动判断权限：当前是 root 时直接安装；普通用户运行时自动调用 `sudo`。如果当前不是 root 且系统没有 `sudo`，脚本会提示切换到 root。
+
 ## 能解决什么问题
 
 - 制作镜像前不需要反复修改或注释 `rc.local`。
@@ -61,19 +71,7 @@
 | `/srv/ess-boot/server.secret` | 原主机 rsync 服务端认证文件，权限为 `600`。 |
 | `/srv/ess-boot/boot.log` | 独立开机日志，记录 `boot.sh` 和 `run.sh` 的标准输出与错误。 |
 
-## 安装
-
-### 一键下载安装
-
-```bash
-if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod +x install.sh && ./install.sh
-```
-
-下载时优先使用 `curl`；系统没有 `curl` 时自动改用 `wget`。如果两者都不存在，命令会停止并提示先安装其中一个，不会执行不完整的安装脚本。
-
-安装脚本会自动判断权限：当前是 root 时直接安装；普通用户运行时自动调用 `sudo`。如果当前不是 root 且系统没有 `sudo`，脚本会提示切换到 root。
-
-### 本地安装
+## 本地安装
 
 在准备制作镜像的原主机上执行：
 
