@@ -7,13 +7,14 @@ fi
 
 set -e
 
-TARGET_SCRIPT=/srv/boot.sh
-STARTUP_SCRIPT=/srv/run.sh
-LOG_FILE=/var/log/scale-boot.log
+BASE_DIR=/srv/ess-boot
+TARGET_SCRIPT=/srv/ess-boot/boot.sh
+STARTUP_SCRIPT=/srv/ess-boot/run.sh
+LOG_FILE=/srv/ess-boot/boot.log
 RSYNC_USER=root
-RSYNC_MODULE=root
-RSYNC_PASSWORD_FILE=/etc/rsync.pwd
-RSYNC_SECRETS_FILE=/etc/rsync.secret
+RSYNC_MODULE=ess_sync
+RSYNC_PASSWORD_FILE=/srv/ess-boot/client.pwd
+RSYNC_SECRETS_FILE=/srv/ess-boot/server.secret
 RSYNC_CONFIG=/etc/rsyncd.conf
 
 detect_system() {
@@ -92,6 +93,7 @@ case "$SYSTEM" in
 esac
 
 echo "[2/7] 配置 rsync 令牌和只读模块"
+install -d -m 0700 "$BASE_DIR"
 if [ ! -s "$RSYNC_PASSWORD_FILE" ]; then
   RSYNC_PASSWORD="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
   printf '%s\n' "$RSYNC_PASSWORD" > "$RSYNC_PASSWORD_FILE"
@@ -103,19 +105,25 @@ printf '%s:%s\n' "$RSYNC_USER" "$RSYNC_PASSWORD" > "$RSYNC_SECRETS_FILE"
 chmod 0600 "$RSYNC_SECRETS_FILE"
 unset RSYNC_PASSWORD
 
-if grep -q '^# BEGIN boot rsync$' "$RSYNC_CONFIG" 2>/dev/null && \
+if grep -q '^# BEGIN ESS-boot rsync$' "$RSYNC_CONFIG" 2>/dev/null && \
+   grep -q "^\[${RSYNC_MODULE}\]$" "$RSYNC_CONFIG" && \
    grep -q "^[[:space:]]*auth users[[:space:]]*=[[:space:]]*${RSYNC_USER}[[:space:]]*$" "$RSYNC_CONFIG"; then
   echo "      rsync 模块已经配置，跳过重复配置。"
 else
+  if grep -q "^\[${RSYNC_MODULE}\]$" "$RSYNC_CONFIG" 2>/dev/null && \
+     ! grep -q '^# BEGIN ESS-boot rsync$' "$RSYNC_CONFIG"; then
+    echo "      错误：rsync 模块 ${RSYNC_MODULE} 已存在且不属于 ESS-boot。" >&2
+    exit 1
+  fi
   if [ -f "$RSYNC_CONFIG" ]; then
     cp -a "$RSYNC_CONFIG" "${RSYNC_CONFIG}.backup.$(date '+%Y%m%d%H%M%S')"
   else
     : > "$RSYNC_CONFIG"
   fi
-  sed -i '/^# BEGIN boot rsync$/,/^# END boot rsync$/d' "$RSYNC_CONFIG"
+  sed -i '/^# BEGIN ESS-boot rsync$/,/^# END ESS-boot rsync$/d' "$RSYNC_CONFIG"
   cat >> "$RSYNC_CONFIG" <<EOF
 
-# BEGIN boot rsync
+# BEGIN ESS-boot rsync
 [${RSYNC_MODULE}]
     path = /
     comment = Read-only root filesystem
@@ -125,8 +133,9 @@ else
     gid = root
     auth users = ${RSYNC_USER}
     secrets file = ${RSYNC_SECRETS_FILE}
+    exclude = /srv/ess-boot/client.pwd /srv/ess-boot/server.secret /srv/ess-boot/boot.log /srv/ess-boot/boot.sh
     strict modes = yes
-# END boot rsync
+# END ESS-boot rsync
 EOF
   echo "      已配置 rsync 只读模块。"
 fi
@@ -139,7 +148,7 @@ set -e
 echo "[$(date '+%F %T')] 开始执行脚本"
 
 # ==================== 执行内容 ====================
-rsync -avz --timeout=60 --contimeout=15 --password-file=/etc/rsync.pwd root@${RSYNC_IP}::root/srv/rsync-test.sh /tmp/rsync-test.sh
+rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/rsync-test.sh /tmp/rsync-test.sh
 chmod 0755 /tmp/rsync-test.sh
 /bin/bash /tmp/rsync-test.sh
 # ==================== 执行内容结束 ====================
@@ -217,7 +226,7 @@ done
 printf ' )\nRSYNC_IP=%q\n' "${ORIGIN_IPS[0]}" >> "$TARGET_SCRIPT"
 cat >> "$TARGET_SCRIPT" <<'BOOT_SCRIPT'
 # -----------------------------------------------------------------------------
-# boot.sh
+# /srv/ess-boot/boot.sh
 #
 # 本脚本由 install.sh 自动生成，并由 /etc/rc.local 在开机时调用。
 # 主要流程：
@@ -227,7 +236,7 @@ cat >> "$TARGET_SCRIPT" <<'BOOT_SCRIPT'
 #   4. 同步成功后执行 run.sh。
 # -----------------------------------------------------------------------------
 
-LOG_FILE=/var/log/scale-boot.log
+LOG_FILE=/srv/ess-boot/boot.log
 NETWORK_RETRY_COUNT=60
 NETWORK_RETRY_INTERVAL=5
 RSYNC_RETRY_COUNT=12
@@ -302,17 +311,17 @@ sync_startup_script() {
   local attempt
   local temp_script
 
-  if [ ! -s /etc/rsync.pwd ]; then
-    log "找不到 rsync 令牌：/etc/rsync.pwd"
+  if [ ! -s /srv/ess-boot/client.pwd ]; then
+    log "找不到 rsync 令牌：/srv/ess-boot/client.pwd"
     return 1
   fi
 
-  temp_script="/srv/run.sh.tmp.$$"
+  temp_script="/srv/ess-boot/run.sh.tmp.$$"
 
   for attempt in $(seq 1 "$RSYNC_RETRY_COUNT"); do
-    if rsync -az --timeout=60 --contimeout=15 --password-file=/etc/rsync.pwd root@${RSYNC_IP}::root/srv/run.sh "$temp_script"; then
+    if rsync -az --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/run.sh "$temp_script"; then
       chmod 0755 "$temp_script"
-      mv -f "$temp_script" /srv/run.sh
+      mv -f "$temp_script" /srv/ess-boot/run.sh
       return 0
     fi
 
@@ -341,16 +350,16 @@ main() {
     log "已忽略原主机 IP 判断，继续执行启动任务"
   fi
 
-  log "检测到弹性伸缩实例，开始同步 /srv/run.sh"
+  log "检测到弹性伸缩实例，开始同步 /srv/ess-boot/run.sh"
 
   if ! sync_startup_script; then
     log "无法从原主机同步启动脚本，停止执行"
     exit 1
   fi
 
-  log "同步完成，开始执行 /srv/run.sh"
+  log "同步完成，开始执行 /srv/ess-boot/run.sh"
   export RSYNC_IP
-  exec /bin/bash /srv/run.sh
+  exec /bin/bash /srv/ess-boot/run.sh
 }
 
 CURRENT_IPS=()
@@ -377,7 +386,7 @@ if [ ! -e "$LOG_FILE" ]; then
   install -m 0644 /dev/null "$LOG_FILE"
 fi
 
-RC_COMMAND='/bin/bash /srv/boot.sh >> /var/log/scale-boot.log 2>&1 &'
+RC_COMMAND='/bin/bash /srv/ess-boot/boot.sh >> /srv/ess-boot/boot.log 2>&1 &'
 if grep -Fqx "$RC_COMMAND" "$RC_LOCAL"; then
   echo "      rc.local 已包含开机调用，跳过重复追加。"
 else
@@ -385,9 +394,9 @@ else
   sed -i '/^[[:space:]]*exit[[:space:]]\+0[[:space:]]*$/d' "$RC_LOCAL"
   cat >> "$RC_LOCAL" <<'EOF'
 
-# BEGIN boot.sh
-/bin/bash /srv/boot.sh >> /var/log/scale-boot.log 2>&1 &
-# END boot.sh
+# BEGIN ESS-boot
+/bin/bash /srv/ess-boot/boot.sh >> /srv/ess-boot/boot.log 2>&1 &
+# END ESS-boot
 
 exit 0
 EOF
@@ -418,6 +427,6 @@ echo "      安装完成：系统已具备开机调用脚本和使用 rsync 的�
 echo
 echo "============================================================"
 echo "下一步："
-echo "  /srv/run.sh 用于设置弹性伸缩实例开机后需要执行的命令。"
-echo "  /var/log/scale-boot.log，每次启动的日志。"
+echo "  /srv/ess-boot/run.sh 用于设置弹性伸缩实例开机后需要执行的命令。"
+echo "  /srv/ess-boot/boot.log，每次启动的日志。"
 echo "============================================================"
