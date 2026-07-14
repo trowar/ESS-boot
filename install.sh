@@ -61,7 +61,12 @@ run_package_command() {
 detect_system
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "错误：请使用 root 用户运行：sudo ./install.sh" >&2
+  if command -v sudo >/dev/null 2>&1; then
+    echo "检测到当前不是 root 用户，正在自动使用 sudo 运行。"
+    exec sudo /bin/bash "$0" "$@"
+  fi
+
+  echo "错误：当前不是 root 用户，并且系统没有 sudo。请切换到 root 后重新运行。" >&2
   exit 1
 fi
 
