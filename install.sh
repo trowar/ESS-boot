@@ -199,13 +199,19 @@ if [ ! -f "$STARTUP_SCRIPT" ]; then
 #!/bin/bash
 set -e
 
+sync_file() {
+  echo "同步：$1 -> $2"
+  mkdir -p "$2"
+  rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
+}
+
 echo "[$(date '+%F %T')] 开始执行脚本"
 
-# ==================== 执行内容 ====================
-rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/rsync-test.sh /tmp/rsync-test.sh
+# 写法说明：sync_file 原主机路径 本机目标目录
+
+sync_file /srv/ess-boot/rsync-test.sh /tmp/
 chmod 0755 /tmp/rsync-test.sh
 /bin/bash /tmp/rsync-test.sh
-# ==================== 执行内容结束 ====================
 
 echo "[$(date '+%F %T')] 脚本执行成功"
 STARTUP_SCRIPT_CONTENT
