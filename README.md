@@ -64,16 +64,12 @@
 ### 一键下载安装
 
 ```bash
-if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod +x install.sh && sudo ./install.sh
-```
-
-使用 root 用户时可以执行：
-
-```bash
-if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o /root/install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO /root/install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod 700 /root/install.sh && /root/install.sh
+if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod +x install.sh && ./install.sh
 ```
 
 下载时优先使用 `curl`；系统没有 `curl` 时自动改用 `wget`。如果两者都不存在，命令会停止并提示先安装其中一个，不会执行不完整的安装脚本。
+
+安装脚本会自动判断权限：当前是 root 时直接安装；普通用户运行时自动调用 `sudo`。如果当前不是 root 且系统没有 `sudo`，脚本会提示切换到 root。
 
 ### 本地安装
 
