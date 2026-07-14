@@ -63,14 +63,16 @@
 ### 一键下载安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o install.sh && chmod +x install.sh && sudo ./install.sh
+if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod +x install.sh && sudo ./install.sh
 ```
 
 使用 root 用户时可以执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o /root/install.sh && chmod 700 /root/install.sh && /root/install.sh
+if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh -o /root/install.sh; elif command -v wget >/dev/null 2>&1; then wget -qO /root/install.sh https://raw.githubusercontent.com/trowar/ESS-boot/main/install.sh; else echo "下载失败：请先安装 curl 或 wget"; exit 1; fi && chmod 700 /root/install.sh && /root/install.sh
 ```
+
+下载时优先使用 `curl`；系统没有 `curl` 时自动改用 `wget`。如果两者都不存在，命令会停止并提示先安装其中一个，不会执行不完整的安装脚本。
 
 ### 本地安装
 
