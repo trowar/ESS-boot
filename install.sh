@@ -207,7 +207,9 @@ sync_file() {
 
 echo "[$(date '+%F %T')] 开始执行脚本"
 
-# 写法说明：sync_file 原主机路径 本机目标目录
+# 写法说明：sync_file 原主机完整路径 本机完整目标目录
+# 源目录结尾带 / 表示同步目录内的内容；不带 / 表示同步目录本身。
+# 同步单个文件时源路径不要加 /，目标位置请填写目录并建议以 / 结尾。
 
 sync_file /srv/ess-boot/rsync-test.sh /tmp/
 chmod 0755 /tmp/rsync-test.sh
