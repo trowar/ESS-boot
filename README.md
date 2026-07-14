@@ -169,12 +169,29 @@ sync_file() {
   rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
 }
 
-# 写法说明：sync_file 原主机路径 本机目标目录
+# 写法说明：sync_file 原主机完整路径 本机完整目标目录
+# 源目录结尾带 / 表示同步目录内的内容；不带 / 表示同步目录本身。
+# 同步单个文件时源路径不要加 /，目标位置请填写目录并建议以 / 结尾。
 
 sync_file /www/wwwroot/ /www/wwwroot/
 sync_file /srv/config/app.conf /srv/config/
 
 echo "[$(date '+%F %T')] 脚本执行成功"
+```
+
+### rsync 路径注意事项
+
+源路径和目标路径应使用以 `/` 开头的完整绝对路径，不要依赖当前工作目录。rsync 对目录末尾的 `/` 有特殊含义：
+
+- `/www/wwwroot/`：同步 `wwwroot` 目录里面的内容。
+- `/www/wwwroot`：同步 `wwwroot` 目录本身，目标位置可能出现额外一层 `wwwroot`。
+- `/srv/config/app.conf`：同步单个文件，文件路径末尾不能加 `/`。
+- 目标参数在本项目中应填写目标目录，例如 `/srv/config/`，建议目录末尾保留 `/`。
+
+为了减少目录层级错误，日常同步目录时建议源路径和目标目录都以 `/` 结尾：
+
+```bash
+sync_file /www/wwwroot/ /www/wwwroot/
 ```
 
 ## 测试
