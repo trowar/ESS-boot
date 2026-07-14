@@ -430,7 +430,7 @@ chmod +x "$RC_LOCAL"
 
 echo "[6/7] 验证 rsync 模块"
 VERIFY_FILE="$(mktemp /tmp/run.verify.XXXXXX)"
-if ! rsync -az --timeout=30 --contimeout=10 --password-file="$RSYNC_PASSWORD_FILE" "${RSYNC_USER}@127.0.0.1::${RSYNC_MODULE}/srv/$(basename "$STARTUP_SCRIPT")" "$VERIFY_FILE"; then
+if ! rsync -az --timeout=30 --contimeout=10 --password-file="$RSYNC_PASSWORD_FILE" "${RSYNC_USER}@127.0.0.1::${RSYNC_MODULE}/${STARTUP_SCRIPT#/}" "$VERIFY_FILE"; then
   rm -f "$VERIFY_FILE"
   echo "      错误：rsync 测试下载失败，安装未完成。" >&2
   exit 1
