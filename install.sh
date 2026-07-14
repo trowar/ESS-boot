@@ -40,6 +40,24 @@ get_host_ips() {
     }'
 }
 
+# 隐藏软件包管理器的正常下载明细；执行失败时再显示完整输出。
+run_package_command() {
+  local description="$1"
+  local output_file
+
+  shift
+  output_file="$(mktemp /tmp/ess-boot-package.XXXXXX)"
+  if "$@" >"$output_file" 2>&1; then
+    rm -f "$output_file"
+    return 0
+  fi
+
+  echo "错误：${description}失败，详细信息如下：" >&2
+  cat "$output_file" >&2
+  rm -f "$output_file"
+  exit 1
+}
+
 detect_system
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -58,8 +76,8 @@ case "$SYSTEM" in
       echo "所需软件包均已安装，跳过 apt 更新和安装。"
     else
       echo "需要安装：${MISSING_PACKAGES[*]}"
-      apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y "${MISSING_PACKAGES[@]}"
+      run_package_command "更新 apt 软件源" apt-get update -qq
+      run_package_command "安装所需软件包" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${MISSING_PACKAGES[@]}"
     fi
     ;;
   centos_rocky_alma)
@@ -71,7 +89,7 @@ case "$SYSTEM" in
       echo "所需软件包均已安装，跳过 dnf 安装。"
     else
       echo "需要安装：${MISSING_PACKAGES[*]}"
-      dnf install -y "${MISSING_PACKAGES[@]}"
+      run_package_command "安装所需软件包" dnf install -y -q "${MISSING_PACKAGES[@]}"
     fi
     ;;
   centos)
@@ -83,7 +101,7 @@ case "$SYSTEM" in
       echo "所需软件包均已安装，跳过 yum 安装。"
     else
       echo "需要安装：${MISSING_PACKAGES[*]}"
-      yum install -y "${MISSING_PACKAGES[@]}"
+      run_package_command "安装所需软件包" yum install -y -q "${MISSING_PACKAGES[@]}"
     fi
     ;;
   *)
