@@ -20,13 +20,13 @@ RSYNC_CONFIG=/etc/rsyncd.conf
 detect_system() {
   if command -v apt-get >/dev/null 2>&1; then
     SYSTEM=ubuntu_debian
-    REQUIRED_PACKAGES='rsync iproute2 procps util-linux gawk coreutils grep sed'
+    REQUIRED_PACKAGES='rsync iproute2 procps util-linux coreutils grep sed'
   elif command -v dnf >/dev/null 2>&1; then
     SYSTEM=centos_rocky_alma
-    REQUIRED_PACKAGES='rsync iproute procps-ng util-linux gawk coreutils grep sed policycoreutils'
+    REQUIRED_PACKAGES='rsync iproute procps-ng util-linux coreutils grep sed policycoreutils'
   elif command -v yum >/dev/null 2>&1; then
     SYSTEM=centos
-    REQUIRED_PACKAGES='rsync iproute procps-ng util-linux gawk coreutils grep sed policycoreutils'
+    REQUIRED_PACKAGES='rsync iproute procps-ng util-linux coreutils grep sed policycoreutils'
   else
     SYSTEM=unknown
     REQUIRED_PACKAGES=''
@@ -58,6 +58,31 @@ run_package_command() {
   exit 1
 }
 
+# 云主机从镜像或快照恢复后，系统时间可能暂时不正确。
+# 仅在需要安装软件包时尝试启用时间同步，避免 apt 因时间偏差失败。
+synchronize_system_time() {
+  local retry
+
+  if ! command -v timedatectl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  timedatectl set-ntp true >/dev/null 2>&1 || true
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart systemd-timesyncd >/dev/null 2>&1 || true
+    systemctl restart chronyd >/dev/null 2>&1 || true
+  fi
+
+  retry=1
+  while [ "$retry" -le 15 ]; do
+    if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ]; then
+      return 0
+    fi
+    sleep 1
+    retry=$((retry + 1))
+  done
+}
+
 detect_system
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -77,10 +102,12 @@ case "$SYSTEM" in
     for package in $REQUIRED_PACKAGES; do
       dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || MISSING_PACKAGES+=("$package")
     done
+    command -v awk >/dev/null 2>&1 || MISSING_PACKAGES+=(gawk)
     if [ "${#MISSING_PACKAGES[@]}" -eq 0 ]; then
       echo "所需软件包均已安装，跳过 apt 更新和安装。"
     else
       echo "需要安装：${MISSING_PACKAGES[*]}"
+      synchronize_system_time
       run_package_command "更新 apt 软件源" apt-get update -qq
       run_package_command "安装所需软件包" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${MISSING_PACKAGES[@]}"
     fi
@@ -90,10 +117,12 @@ case "$SYSTEM" in
     for package in $REQUIRED_PACKAGES; do
       rpm -q "$package" >/dev/null 2>&1 || MISSING_PACKAGES+=("$package")
     done
+    command -v awk >/dev/null 2>&1 || MISSING_PACKAGES+=(gawk)
     if [ "${#MISSING_PACKAGES[@]}" -eq 0 ]; then
       echo "所需软件包均已安装，跳过 dnf 安装。"
     else
       echo "需要安装：${MISSING_PACKAGES[*]}"
+      synchronize_system_time
       run_package_command "安装所需软件包" dnf install -y -q "${MISSING_PACKAGES[@]}"
     fi
     ;;
@@ -102,10 +131,12 @@ case "$SYSTEM" in
     for package in $REQUIRED_PACKAGES; do
       rpm -q "$package" >/dev/null 2>&1 || MISSING_PACKAGES+=("$package")
     done
+    command -v awk >/dev/null 2>&1 || MISSING_PACKAGES+=(gawk)
     if [ "${#MISSING_PACKAGES[@]}" -eq 0 ]; then
       echo "所需软件包均已安装，跳过 yum 安装。"
     else
       echo "需要安装：${MISSING_PACKAGES[*]}"
+      synchronize_system_time
       run_package_command "安装所需软件包" yum install -y -q "${MISSING_PACKAGES[@]}"
     fi
     ;;
