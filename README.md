@@ -165,9 +165,16 @@ set -e
 
 echo "[$(date '+%F %T')] 开始执行脚本"
 
-# ==================== 执行内容 ====================
-rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/www/wwwroot/ /www/wwwroot/
-# ==================== 执行内容结束 ====================
+sync_file() {
+  echo "同步：$1 -> $2"
+  mkdir -p "$2"
+  rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
+}
+
+# 写法说明：sync_file 原主机路径 本机目标目录
+
+sync_file /www/wwwroot/ /www/wwwroot/
+sync_file /srv/config/app.conf /srv/config/
 
 echo "[$(date '+%F %T')] 脚本执行成功"
 ```
