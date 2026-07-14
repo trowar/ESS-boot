@@ -8,13 +8,15 @@ fi
 set -e
 
 BASE_DIR=/srv/ess-boot
+RSYNC_DIR=/srv/ess-boot/rsync
 TARGET_SCRIPT=/srv/ess-boot/boot.sh
 STARTUP_SCRIPT=/srv/ess-boot/run.sh
+RSYNC_TEST_SCRIPT=/srv/ess-boot/rsync/rsync-test.sh
 LOG_FILE=/srv/ess-boot/boot.log
 RSYNC_USER=root
 RSYNC_MODULE=ess_sync
-RSYNC_PASSWORD_FILE=/srv/ess-boot/client.pwd
-RSYNC_SECRETS_FILE=/srv/ess-boot/server.secret
+RSYNC_PASSWORD_FILE=/srv/ess-boot/rsync/client.pwd
+RSYNC_SECRETS_FILE=/srv/ess-boot/rsync/server.secret
 RSYNC_CONFIG=/etc/rsyncd.conf
 
 detect_system() {
@@ -148,6 +150,7 @@ esac
 
 echo "[2/7] 配置 rsync 令牌和只读模块"
 install -d -m 0700 "$BASE_DIR"
+install -d -m 0700 "$RSYNC_DIR"
 if [ ! -s "$RSYNC_PASSWORD_FILE" ]; then
   RSYNC_PASSWORD="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
   printf '%s\n' "$RSYNC_PASSWORD" > "$RSYNC_PASSWORD_FILE"
@@ -159,9 +162,11 @@ printf '%s:%s\n' "$RSYNC_USER" "$RSYNC_PASSWORD" > "$RSYNC_SECRETS_FILE"
 chmod 0600 "$RSYNC_SECRETS_FILE"
 unset RSYNC_PASSWORD
 
+RSYNC_CONFIG_CHANGED=0
 if grep -q '^# BEGIN ESS-boot rsync$' "$RSYNC_CONFIG" 2>/dev/null && \
    grep -q "^\[${RSYNC_MODULE}\]$" "$RSYNC_CONFIG" && \
-   grep -q "^[[:space:]]*auth users[[:space:]]*=[[:space:]]*${RSYNC_USER}[[:space:]]*$" "$RSYNC_CONFIG"; then
+   grep -q "^[[:space:]]*auth users[[:space:]]*=[[:space:]]*${RSYNC_USER}[[:space:]]*$" "$RSYNC_CONFIG" && \
+   grep -q "^[[:space:]]*secrets file[[:space:]]*=[[:space:]]*${RSYNC_SECRETS_FILE}[[:space:]]*$" "$RSYNC_CONFIG"; then
   echo "      rsync 模块已经配置，跳过重复配置。"
 else
   if grep -q "^\[${RSYNC_MODULE}\]$" "$RSYNC_CONFIG" 2>/dev/null && \
@@ -187,12 +192,23 @@ else
     gid = root
     auth users = ${RSYNC_USER}
     secrets file = ${RSYNC_SECRETS_FILE}
-    exclude = /srv/ess-boot/client.pwd /srv/ess-boot/server.secret /srv/ess-boot/boot.log /srv/ess-boot/boot.sh
+    exclude = /srv/ess-boot/rsync/client.pwd /srv/ess-boot/rsync/server.secret /srv/ess-boot/boot.log /srv/ess-boot/boot.sh
     strict modes = yes
 # END ESS-boot rsync
 EOF
+  RSYNC_CONFIG_CHANGED=1
   echo "      已配置 rsync 只读模块。"
 fi
+
+if [ ! -f "$RSYNC_TEST_SCRIPT" ]; then
+  cat > "$RSYNC_TEST_SCRIPT" <<'RSYNC_TEST_SCRIPT_CONTENT'
+#!/bin/bash
+set -e
+
+echo "rsync 可执行脚本测试成功"
+RSYNC_TEST_SCRIPT_CONTENT
+fi
+chmod 0755 "$RSYNC_TEST_SCRIPT"
 
 if [ ! -f "$STARTUP_SCRIPT" ]; then
   cat > "$STARTUP_SCRIPT" <<'STARTUP_SCRIPT_CONTENT'
@@ -202,7 +218,7 @@ set -e
 sync_file() {
   echo "同步：$1 -> $2"
   mkdir -p "$2"
-  rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
+  rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/rsync/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
 }
 
 echo "[$(date '+%F %T')] 开始执行脚本"
@@ -211,7 +227,7 @@ echo "[$(date '+%F %T')] 开始执行脚本"
 # 源目录结尾带 / 表示同步目录内的内容；不带 / 表示同步目录本身。
 # 同步单个文件时源路径不要加 /，目标位置请填写目录并建议以 / 结尾。
 
-sync_file /srv/ess-boot/rsync-test.sh /tmp/
+sync_file /srv/ess-boot/rsync/rsync-test.sh /tmp/
 chmod 0755 /tmp/rsync-test.sh
 /bin/bash /tmp/rsync-test.sh
 
@@ -231,7 +247,12 @@ else
 fi
 
 if systemctl is-enabled --quiet "$RSYNC_SERVICE" && systemctl is-active --quiet "$RSYNC_SERVICE"; then
-  echo "      $RSYNC_SERVICE 已启用并运行，跳过重复配置。"
+  if [ "$RSYNC_CONFIG_CHANGED" -eq 1 ]; then
+    systemctl restart "$RSYNC_SERVICE"
+    echo "      rsync 配置已更新并重新加载。"
+  else
+    echo "      $RSYNC_SERVICE 已启用并运行，跳过重复配置。"
+  fi
 else
   if systemctl enable --now "$RSYNC_SERVICE" >/dev/null 2>&1; then
     echo "      已启用并启动 $RSYNC_SERVICE。"
@@ -373,15 +394,15 @@ sync_startup_script() {
   local attempt
   local temp_script
 
-  if [ ! -s /srv/ess-boot/client.pwd ]; then
-    log "找不到 rsync 令牌：/srv/ess-boot/client.pwd"
+  if [ ! -s /srv/ess-boot/rsync/client.pwd ]; then
+    log "找不到 rsync 令牌：/srv/ess-boot/rsync/client.pwd"
     return 1
   fi
 
   temp_script="/srv/ess-boot/run.sh.tmp.$$"
 
   for attempt in $(seq 1 "$RSYNC_RETRY_COUNT"); do
-    if rsync -az --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/run.sh "$temp_script"; then
+    if rsync -az --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/rsync/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/run.sh "$temp_script"; then
       chmod 0755 "$temp_script"
       mv -f "$temp_script" /srv/ess-boot/run.sh
       return 0
