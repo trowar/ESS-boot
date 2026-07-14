@@ -136,13 +136,15 @@ if [ ! -f "$STARTUP_SCRIPT" ]; then
 #!/bin/bash
 set -e
 
-echo "==================== run.sh 开始 ===================="
 echo "[$(date '+%F %T')] 开始执行脚本"
+
+# ==================== 执行内容 ====================
 rsync -avz --timeout=60 --contimeout=15 --password-file=/etc/rsync.pwd root@${RSYNC_IP}::root/srv/rsync-test.sh /tmp/rsync-test.sh
 chmod 0755 /tmp/rsync-test.sh
 /bin/bash /tmp/rsync-test.sh
+# ==================== 执行内容结束 ====================
+
 echo "[$(date '+%F %T')] 脚本执行成功"
-echo "==================== run.sh 结束 ===================="
 STARTUP_SCRIPT_CONTENT
 fi
 chmod 0755 "$STARTUP_SCRIPT"
