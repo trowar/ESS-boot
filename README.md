@@ -63,12 +63,13 @@ if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubuserconten
 | `install.sh` | 一次性安装入口，识别系统、安装缺少的软件包、记录原主机 IP、配置 rsync 和 `rc.local`。 |
 | `/srv/ess-boot/boot.sh` | 开机控制脚本。等待网络、判断机器身份、安全同步并执行 `run.sh`。由 `install.sh` 自动生成。 |
 | `/srv/ess-boot/run.sh` | 用户维护的业务脚本。填写伸缩实例开机后真正需要执行的命令。 |
-| `/srv/ess-boot/rsync-test.sh` | 安装时用于验证 rsync 下载及文件内容的测试脚本。 |
+| `/srv/ess-boot/rsync/` | 集中保存本项目的 rsync 令牌和测试脚本。 |
+| `/srv/ess-boot/rsync/rsync-test.sh` | 安装时用于验证 rsync 下载及文件内容的测试脚本。 |
 | `/etc/rc.local` | Ubuntu/Debian 的开机入口。仅在缺少调用时追加 `boot.sh`。 |
 | `/etc/rc.d/rc.local` | CentOS/Rocky/AlmaLinux 的开机入口。 |
 | `/etc/rsyncd.conf` | 原主机 rsync 服务配置。模块名固定为 `ess_sync`，只读映射根目录 `/`。 |
-| `/srv/ess-boot/client.pwd` | 伸缩实例连接原主机 rsync 服务使用的令牌，权限为 `600`。 |
-| `/srv/ess-boot/server.secret` | 原主机 rsync 服务端认证文件，权限为 `600`。 |
+| `/srv/ess-boot/rsync/client.pwd` | 伸缩实例连接原主机 rsync 服务使用的令牌，权限为 `600`。 |
+| `/srv/ess-boot/rsync/server.secret` | 原主机 rsync 服务端认证文件，权限为 `600`。 |
 | `/srv/ess-boot/boot.log` | 独立开机日志，记录 `boot.sh` 和 `run.sh` 的标准输出与错误。 |
 
 ## 本地安装
@@ -127,7 +128,7 @@ vi /srv/ess-boot/run.sh
 `boot.sh` 同步业务脚本的命令：
 
 ```bash
-rsync -az --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/run.sh /srv/ess-boot/run.sh.tmp
+rsync -az --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/rsync/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/run.sh /srv/ess-boot/run.sh.tmp
 ```
 
 同步成功后：
@@ -166,7 +167,7 @@ echo "[$(date '+%F %T')] 开始执行脚本"
 sync_file() {
   echo "同步：$1 -> $2"
   mkdir -p "$2"
-  rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
+  rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/rsync/client.pwd "root@${RSYNC_IP}::ess_sync$1" "$2"
 }
 
 # 写法说明：sync_file 原主机完整路径 本机完整目标目录
@@ -204,10 +205,10 @@ sh /srv/ess-boot/boot.sh --ignore-ip
 
 正常开机调用不能添加 `--ignore-ip`，否则原主机也会同步并执行 `run.sh`。
 
-测试可执行脚本同步时，可以在原主机准备 `/srv/ess-boot/rsync-test.sh`，并在 `run.sh` 中写入：
+安装程序会在原主机自动生成 `/srv/ess-boot/rsync/rsync-test.sh`。测试可执行脚本同步时，可在 `run.sh` 中写入：
 
 ```bash
-rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/rsync-test.sh /tmp/rsync-test.sh
+rsync -avz --timeout=60 --contimeout=15 --password-file=/srv/ess-boot/rsync/client.pwd root@${RSYNC_IP}::ess_sync/srv/ess-boot/rsync/rsync-test.sh /tmp/rsync-test.sh
 chmod 0755 /tmp/rsync-test.sh
 /bin/bash /tmp/rsync-test.sh
 ```
@@ -239,5 +240,5 @@ tail -f /srv/ess-boot/boot.log
 - rsync 使用 TCP `873`，云平台安全组需要允许伸缩实例访问原主机该端口。
 - rsync 模块 `ess_sync` 以只读方式映射原主机根目录 `/`，可读取原主机全部路径。
 - 必须通过安全组或防火墙限制 TCP 873 的来源，只允许可信的伸缩实例访问。
-- 必须保护 `/srv/ess-boot/client.pwd` 和 `/srv/ess-boot/server.secret`，不要输出、上传或提交到代码仓库。
+- 必须保护 `/srv/ess-boot/rsync/client.pwd` 和 `/srv/ess-boot/rsync/server.secret`，不要输出、上传或提交到代码仓库。
 - rsync 默认不会删除目标机多余文件。只有明确需要镜像删除行为时才添加 `--delete`。
